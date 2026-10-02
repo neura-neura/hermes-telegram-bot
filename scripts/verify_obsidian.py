@@ -10,7 +10,7 @@ from app.storage import Storage
 URI='obsidian://open?vault=Hermes%20Prueba&file=Carpeta/Nota%20de%20prueba'
 
 async def main():
- c=Config.load();g=Gateway(c);result={'uri':URI,'desktop_modified':False}
+ c=Config.load();c.obsidian_bridge_url='';g=Gateway(c);result={'uri':URI,'desktop_modified':False}
  with tempfile.TemporaryDirectory() as tmp:
   g.store=await Storage().open(Path(tmp)/'state.db')
   try:

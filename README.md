@@ -72,7 +72,7 @@ Desinstalar servicio: `.venv/bin/python -m scripts.service uninstall`. Conserva 
 
 ## Validación
 
-[Mapa de capacidades](docs/CAPABILITIES.md), [pruebas controladas reales](docs/validation.json), [audio e idiomas](docs/audio-validation.json), [voz original del OWNER](docs/real-voice-validation.json), [PDF original del OWNER](docs/real-pdf-validation.json), [audio largo](docs/long-audio-validation.json), [selección de bot conservando perfil](docs/bot-selection-validation.json).
+[Mapa de capacidades](docs/CAPABILITIES.md) y [puente Obsidian](docs/OBSIDIAN.md). Los reportes JSON de pruebas reales permanecen sólo en la instalación local bajo `docs/` y están excluidos del repositorio público para no publicar identificadores de sesiones ni archivos personales.
 
 Pruebas controladas realizan generaciones reales Hermes y entregas Bot API, pero no simulan que mensajes fueron enviados por la cuenta OWNER. Recepción genuina de `/start`, foto, PDF y voz se verificó con mensajes del usuario. El usuario verificó botones Chats/Bots/Perfiles/Inicio y «hola». Primeros fallos se corrigieron y los documentos originales se reprocesaron sin pedir reenvío. Las pruebas de eliminación usaron sólo recursos desechables de validación.
 
@@ -89,3 +89,5 @@ La API multiplexada exige `API_SERVER_KEY` propia por perfil, aunque la app Desk
 ## Obsidian
 
 Las respuestas con URIs Obsidian se validan sin reescribir el destino. Con `OBSIDIAN_BRIDGE_URL=https://neura-neura.github.io/hermes-telegram-bot/`, Telegram muestra **Abrir en Obsidian** con destino HTTPS; la página estática valida el fragmento e intenta abrir el URI original en ese dispositivo. Puede requerir confirmación o un toque adicional del navegador. No hay servidor local ni backend del puente. Sin el puente, la Bot API rechaza el protocolo directo y se entrega texto como fallback. Política y pruebas en [docs/OBSIDIAN.md](docs/OBSIDIAN.md).
+
+El puente se publica automáticamente cuando cambia `bridge/` en `main`. Verificación: `.venv/bin/python -m pytest -q`, `node --test tests/bridge.test.cjs` y `.venv/bin/python -m scripts.verify_obsidian_bridge` (este último envía un botón real al OWNER).

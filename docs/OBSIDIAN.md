@@ -8,9 +8,9 @@ Política cerrada: esquema literal `obsidian`, autoridad `open`, sin path, fragm
 
 Se detectan enlaces Markdown y URIs planos. No se convierten bloques cercados de código (backticks o tildes, incluidos bloques sin cerrar), código inline ni etiquetas de enlaces Markdown. Los destinos únicos generan un solo botón. El título del modelo no controla ni la etiqueta fija ni el destino. El texto restante sigue por el escape HTML habitual.
 
-Cuando se acepta el botón, se retiran las ocurrencias convertidas de la respuesta. Cuando Telegram lo rechaza, se restaura la respuesta original usando el envío HTML/texto habitual. Se registra un motivo categorizado sin rutas privadas ni contenido del modelo. Los archivos salientes mantienen su ruta de entrega existente. No hay servidores, redirecciones ni URLs intermedias.
+Cuando se acepta el botón, se retiran las ocurrencias convertidas de la respuesta. Cuando Telegram lo rechaza, se restaura la respuesta original usando el envío HTML/texto habitual. Se registra un motivo categorizado sin rutas privadas ni contenido del modelo. Los archivos salientes mantienen su ruta de entrega existente. En el modo directo no hay servidores, redirecciones ni URLs intermedias. El modo HTTPS autorizado posteriormente se describe abajo.
 
-## Verificación real y limitación
+## Verificación del modo directo y limitación
 
 El 2 de octubre de 2026 se probó la Bot API real contra el OWNER. Telegram rechazó **ambas** opciones: botón inline y entidad `text_link`, con `unsupported url protocol`. El fallback textual sí se entregó. El informe está en `docs/obsidian-validation.json`.
 
@@ -54,3 +54,11 @@ node --test tests/bridge.test.cjs
 ```
 
 Resultado tras integrar el puente: 92 pruebas Python y 5 pruebas JavaScript. El deploy se verifica mediante GitHub Actions y una petición HTTPS a la página publicada.
+
+Publicación comprobada: GitHub Actions completó el deploy, los tres recursos públicos respondieron por HTTPS y coinciden byte a byte con los archivos locales. El navegador ejecutó el script y rechazó correctamente una página sin URI. La Bot API aceptó el botón HTTPS y conservó su fragmento sin cambios; el OWNER recibió una prueba con vault ficticio porque su conversación activa no contenía un URI válido para reutilizar. Informe local: `docs/obsidian-bridge-validation.json` (excluido del repositorio público).
+
+Comando de prueba real del puente:
+
+```bash
+.venv/bin/python -m scripts.verify_obsidian_bridge
+```
