@@ -2,8 +2,16 @@ import asyncio, mimetypes, re, tempfile, time, logging
 from dataclasses import dataclass
 from pathlib import Path
 from app.config import ROOT
+from telegram.error import NetworkError,BadRequest,RetryAfter
 log=logging.getLogger(__name__)
 MAX_DOWNLOAD=20*1024*1024
+DOWNLOAD_ATTEMPTS=3
+DOWNLOAD_TIMEOUTS=dict(read_timeout=45,write_timeout=30,connect_timeout=15,pool_timeout=30)
+
+class DownloadUnavailable(ValueError):
+    """A read-only download failed before any Hermes action was started."""
+
+class IncompleteDownload(Exception):pass
 @dataclass
 class Attachment:
     path: Path
@@ -30,10 +38,39 @@ async def download(bot, message, directory):
     if source.file_size and source.file_size>MAX_DOWNLOAD:raise ValueError('Telegram permite descargar hasta 20 MB por archivo.')
     name=getattr(source,'file_name',None) or ('photo.jpg' if message.photo else 'voice.ogg' if message.voice else 'audio.mp3' if message.audio else 'video.mp4')
     name=safe_name(name);path=directory/(str(message.message_id)+'_'+name)
-    f=await bot.get_file(source.file_id)
-    await f.download_to_drive(path)
-    size=(await asyncio.to_thread(path.stat)).st_size
-    if size>MAX_DOWNLOAD:raise ValueError('Archivo mayor de 20 MB')
+    # Retry only Telegram reads. Never retry process_media or a Hermes turn.
+    # Refresh getFile each time: the old file/CDN path may have expired.
+    partial=path.with_name(path.name+'.part')
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        phase='get_file'
+        try:
+            f=await bot.get_file(source.file_id,**DOWNLOAD_TIMEOUTS)
+            if f.file_size and f.file_size>MAX_DOWNLOAD:
+                raise ValueError('Archivo mayor de 20 MB')
+            phase='download'
+            await f.download_to_drive(partial,**DOWNLOAD_TIMEOUTS)
+            size=(await asyncio.to_thread(partial.stat)).st_size
+            if size>MAX_DOWNLOAD:raise ValueError('Archivo mayor de 20 MB')
+            expected=f.file_size or source.file_size
+            if not size or (expected and size!=expected):raise IncompleteDownload()
+            await asyncio.to_thread(partial.replace,path)
+            break
+        except BadRequest:
+            # Permanent errors (invalid file_id, too large) are not transient.
+            raise DownloadUnavailable('Telegram rechazó este archivo. No se envió ninguna tarea a Hermes.') from None
+        except (NetworkError,RetryAfter,IncompleteDownload) as error:
+            log.warning('Telegram file read failed phase=%s attempt=%d error=%s',phase,attempt+1,type(error).__name__)
+            if attempt+1==DOWNLOAD_ATTEMPTS:
+                raise DownloadUnavailable('No pude descargar el archivo de Telegram tras varios intentos. No se envió ninguna tarea a Hermes; puedes reenviar el audio.') from None
+            if isinstance(error,RetryAfter):
+                retry_after=error.retry_after
+                delay=retry_after.total_seconds() if hasattr(retry_after,'total_seconds') else float(retry_after)
+                if delay>30:
+                    raise DownloadUnavailable('Telegram pide esperar antes de descargar el archivo. No se envió ninguna tarea a Hermes; inténtalo más tarde.') from None
+            else:delay=2**attempt
+            await asyncio.sleep(delay)
+        finally:
+            await asyncio.to_thread(partial.unlink,missing_ok=True)
     mime=mime_type(name,getattr(source,'mime_type',None))
     log.info('file received type=%s bytes=%d',mime,size)
     return Attachment(path,name,mime,size)

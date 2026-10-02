@@ -93,3 +93,9 @@ Las respuestas con URIs Obsidian se validan sin reescribir el destino. Con `OBSI
 El puente se publica automáticamente cuando cambia `bridge/` en `main`. Verificación: `.venv/bin/python -m pytest -q`, `node --test tests/bridge.test.cjs` y `.venv/bin/python -m scripts.verify_obsidian_bridge` (este último envía un botón real al OWNER).
 
 Los enlaces Obsidian que Hermes produzca con query de formulario (`+` como espacio) se convierten explícitamente a `%20` antes de validar y crear el botón. `%2B` se conserva como signo más. Esta compatibilidad se registra sin incluir rutas de notas.
+
+## Recuperación de descargas Telegram
+
+Las lecturas `getFile` y la descarga de archivos usan tiempos explícitos de 45 s de lectura, 15 s de conexión y 30 s de pool/escritura, con hasta tres intentos ante errores temporales. Cada intento obtiene una ruta nueva, descarga a `.part`, verifica tamaño y publica el archivo local completo mediante rename. Los parciales se eliminan incluso si se cancela. Errores permanentes y archivos mayores de 20 MB no se reintentan. La recuperación termina antes de transcribir o llamar a Hermes: nunca se reejecuta una tarea por un fallo de descarga.
+
+Verificación: `.venv/bin/python -m pytest -q` (110 pruebas) y `.venv/bin/python -m scripts.verify_audio_download`. La prueba real envía una voz sintética al OWNER, introduce un único timeout antes de `getFile`, recupera los bytes y transcribe localmente sin ejecutar turnos Hermes. Los detalles de diagnóstico se limitan a fase, intento y clase de error, sin IDs ni URLs privadas.
