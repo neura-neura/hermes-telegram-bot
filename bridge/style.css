@@ -1,0 +1,11 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; background: #15131c; color: #eeeaf5; }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+main { width: min(32rem, calc(100% - 3rem)); padding: 3rem 0; }
+.eyebrow { color: #bea5ed; letter-spacing: .13em; font-size: .75rem; }
+h1 { font-size: clamp(2rem, 7vw, 3rem); margin: 1rem 0; }
+p { line-height: 1.65; }
+#open { display: block; padding: 1rem; margin: 1.5rem 0; text-align: center; border-radius: .75rem; background: #a981ee; color: #180f26; font-weight: 700; text-decoration: none; }
+#open:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+#open[hidden] { display: none; }
+.hint { color: #cec6db; }
+.privacy { color: #a79daf; font-size: .85rem; }

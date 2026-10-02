@@ -1,0 +1,17 @@
+.env
+.venv/
+data/
+logs/
+__pycache__/
+.pytest_cache/
+*.pyc
+discovery-session.json
+
+# Local validation evidence / one-off recovery scripts
+docs/*.json
+scripts/probe.py
+scripts/recover_pdf.py
+scripts/recover_voice.py
+scripts/real_voice_probe.py
+scripts/warm_transcription.py
+.DS_Store
