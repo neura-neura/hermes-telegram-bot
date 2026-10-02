@@ -1,4 +1,4 @@
-"""Pure Obsidian action extraction. Destinations are validated, never rewritten."""
+"""Pure Obsidian extraction; preserve RFC 3986 URIs, repair form-encoded spaces."""
 import re
 from urllib.parse import urlsplit, unquote, quote
 
@@ -35,6 +35,22 @@ def valid_obsidian_uri(uri):
         return False
 
 
+def canonical_obsidian_uri(uri):
+    """Explicit compatibility with form-query producers: '+' means space.
+
+    Valid RFC 3986 input is returned unchanged. For legacy form encoding only
+    replace literal '+' with '%20'; never decode/re-encode the other bytes.
+    A real plus must be percent encoded as %2B. Revalidate the full result.
+    """
+    if valid_obsidian_uri(uri):
+        return uri
+    if '+' in uri:
+        repaired=uri.replace('+','%20')
+        if valid_obsidian_uri(repaired):
+            return repaired
+    return None
+
+
 def _code_ranges(text):
     """Protect fenced (including unclosed) and inline code from extraction."""
     ranges = []
@@ -59,7 +75,7 @@ def extract_obsidian_telegram_actions(text):
     """Return {text, buttons}; only remove occurrences yielding valid actions.
 
     The caller must restore the original text if Telegram rejects the keyboard.
-    No network calls, filesystem access, decoding/re-encoding of destinations,
+    No network calls, filesystem access, decoding/re-encoding of RFC destinations,
     or model-controlled button labels.
     """
     protected = _code_ranges(text)
@@ -68,11 +84,18 @@ def extract_obsidian_telegram_actions(text):
     replacements = []
     buttons = []
     seen = set()
+    normalized_form_spaces = False
     # Never interpret a Markdown label as a destination, even for other schemes.
     markdown_ranges = [m.span() for m in re.finditer(r'!?\[[^\]\n]*\]\([^\n]*?\)', text)]
     def add(uri, start, end):
-        if not allowed(start, end) or not valid_obsidian_uri(uri):
+        nonlocal normalized_form_spaces
+        if not allowed(start,end):
             return
+        canonical=canonical_obsidian_uri(uri)
+        if canonical is None:
+            return
+        normalized_form_spaces |= canonical!=uri
+        uri=canonical
         replacements.append((start, end))
         if uri not in seen:
             seen.add(uri); buttons.append({'text': LABEL, 'url': uri})
@@ -86,7 +109,9 @@ def extract_obsidian_telegram_actions(text):
     result = text
     for start, end in sorted(replacements, reverse=True):
         result = result[:start] + result[end:]
-    return {'text': result, 'buttons': buttons}
+    result={'text': result, 'buttons': buttons}
+    if normalized_form_spaces:result['normalized_form_spaces']=True
+    return result
 
 
 def obsidian_button_url(uri, bridge_url=''):

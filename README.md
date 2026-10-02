@@ -91,3 +91,5 @@ La API multiplexada exige `API_SERVER_KEY` propia por perfil, aunque la app Desk
 Las respuestas con URIs Obsidian se validan sin reescribir el destino. Con `OBSIDIAN_BRIDGE_URL=https://neura-neura.github.io/hermes-telegram-bot/`, Telegram muestra **Abrir en Obsidian** con destino HTTPS; la página estática valida el fragmento e intenta abrir el URI original en ese dispositivo. Puede requerir confirmación o un toque adicional del navegador. No hay servidor local ni backend del puente. Sin el puente, la Bot API rechaza el protocolo directo y se entrega texto como fallback. Política y pruebas en [docs/OBSIDIAN.md](docs/OBSIDIAN.md).
 
 El puente se publica automáticamente cuando cambia `bridge/` en `main`. Verificación: `.venv/bin/python -m pytest -q`, `node --test tests/bridge.test.cjs` y `.venv/bin/python -m scripts.verify_obsidian_bridge` (este último envía un botón real al OWNER).
+
+Los enlaces Obsidian que Hermes produzca con query de formulario (`+` como espacio) se convierten explícitamente a `%20` antes de validar y crear el botón. `%2B` se conserva como signo más. Esta compatibilidad se registra sin incluir rutas de notas.

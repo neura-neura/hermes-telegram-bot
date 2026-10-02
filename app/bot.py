@@ -395,6 +395,8 @@ class Gateway:
     async def deliver(self,u,text,sid,profile,status=None,hermes_mid=None):
         paths=output_paths(text)
         actions=extract_obsidian_telegram_actions(text)
+        if actions.get('normalized_form_spaces'):
+            log.info('Obsidian URI normalized reason=form_encoded_spaces')
         keyboard=Keyboard([[Button(b['text'],url=obsidian_button_url(b['url'],self.config.obsidian_bridge_url))] for b in actions['buttons']]) if actions['buttons'] else None
         rendered=actions['text'] if keyboard else text
         chunks=list(split_text(rendered if rendered.strip() else (LABEL if keyboard else 'Hermes terminó la petición.')))

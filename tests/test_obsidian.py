@@ -154,3 +154,53 @@ async def test_delivery_uses_bridge_with_original_fragment(tmp_path):
   assert unquote(urlsplit(button.url).fragment)==URI
   assert mock.call_args.args[0]=='Nota: '
  finally:await g.store.close();await g.hermes.close()
+
+@pytest.mark.parametrize('markdown',[False,True])
+def test_form_encoded_spaces_compatibility(markdown):
+ legacy='obsidian://open?vault=My+Vault&file=Inbox%2FPlans+for+today'
+ expected='obsidian://open?vault=My%20Vault&file=Inbox%2FPlans%20for%20today'
+ source=f'[{LABEL}]({legacy})' if markdown else legacy
+ result=extract(source)
+ assert result['buttons']==[{'text':LABEL,'url':expected}]
+ assert result['text']=='';assert result['normalized_form_spaces']
+ assert valid_obsidian_uri(expected)
+
+
+def test_form_spaces_preserve_real_plus_and_all_other_encoded_bytes():
+ legacy='obsidian://open?vault=A+B&file=Inbox%2fC%2B%2B+%E7%AC%94%E8%AE%B0'
+ result=extract(legacy)
+ assert result['buttons'][0]['url']=='obsidian://open?vault=A%20B&file=Inbox%2fC%2B%2B%20%E7%AC%94%E8%AE%B0'
+
+
+def test_form_equivalent_duplicates_and_code_protection():
+ legacy='obsidian://open?vault=A&file=Plans+today'
+ canonical=legacy.replace('+','%20')
+ result=extract(legacy+'\n'+canonical+'\n`'+legacy+'`')
+ assert len(result['buttons'])==1
+ assert result['text']=='\n\n`'+legacy+'`'
+
+@pytest.mark.parametrize('legacy',[
+ 'obsidian://open?vault=A&file=+',
+ 'obsidian://open?vault=A&file=Notes+today&unexpected=B',
+ 'obsidian://open?vault=A&file=%3Cscript%3E+today',
+ 'obsidian://open?vault=A&file=Notes+...',
+])
+def test_form_compatibility_keeps_security_policy(legacy):
+ assert extract(legacy)=={'text':legacy,'buttons':[]}
+
+@pytest.mark.asyncio
+async def test_legacy_real_response_generates_https_button(tmp_path,caplog):
+ from urllib.parse import unquote,urlsplit
+ g=Gateway(Config('fake',123,obsidian_bridge_url='https://example.github.io/hermes/'))
+ g.store=await Storage().open(tmp_path/'s.db')
+ mock=AsyncMock(return_value=SimpleNamespace(chat_id=123,message_id=7))
+ u=SimpleNamespace(effective_chat=SimpleNamespace(id=123),effective_user=SimpleNamespace(id=123),effective_message=SimpleNamespace(message_thread_id=None,reply_text=mock))
+ legacy='obsidian://open?vault=Vault&file=Inbox%2FPlans+for+today'
+ try:
+  with caplog.at_level(logging.INFO):await g.deliver(u,'Actualicé la nota.\n\n'+legacy,'sid','default')
+  button=mock.call_args.kwargs['reply_markup'].inline_keyboard[0][0]
+  assert button.text==LABEL
+  assert unquote(urlsplit(button.url).fragment)==legacy.replace('+','%20')
+  assert mock.call_args.args[0]=='Actualicé la nota.\n\n'
+  assert 'form_encoded_spaces' in caplog.text;assert legacy not in caplog.text
+ finally:await g.store.close();await g.hermes.close()

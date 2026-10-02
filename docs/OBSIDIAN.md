@@ -4,7 +4,7 @@ La integración reside en el gateway de este proyecto. No se modificó Hermes De
 
 `app/obsidian.py` expone `extract_obsidian_telegram_actions(text)` sin llamadas de red. Devuelve texto y botones con etiqueta fija **Abrir en Obsidian** y destino idéntico al URI validado. `Gateway.deliver` en `app/bot.py` conecta esta salida con el envío y la edición existentes, incluidos mensajes largos y respuestas con archivos.
 
-Política cerrada: esquema literal `obsidian`, autoridad `open`, sin path, fragmento, usuario ni puerto; exactamente `vault` y `file`, no repetidos y no vacíos. Se rechazan valores con espacios sin codificar, Unicode sin codificar, percent-encoding mal formado, controles, HTML y abreviaciones con `...` o `…`. Un `+` literal se rechaza; un signo más real debe ser `%2B`. `%20`, barras, Unicode codificado y caracteres reservados permanecen exactamente como llegaron. La decodificación sólo valida y nunca reconstruye el destino.
+Política cerrada: esquema literal `obsidian`, autoridad `open`, sin path, fragmento, usuario ni puerto; exactamente `vault` y `file`, no repetidos y no vacíos. Se rechazan valores con espacios sin codificar, Unicode sin codificar, percent-encoding mal formado, controles, HTML y abreviaciones con `...` o `…`. El validador RFC 3986 rechaza `+` literal. En la extracción Telegram hay una capa explícita de compatibilidad para productores de query tipo formulario: convierte exclusivamente `+` a `%20`, revalida todo el URI y registra `form_encoded_spaces` sin contenido privado. Un signo más real debe ser `%2B` y se conserva. `%20`, barras, Unicode codificado y caracteres reservados permanecen exactamente como llegaron. La decodificación sólo valida y nunca reconstruye el destino.
 
 Se detectan enlaces Markdown y URIs planos. No se convierten bloques cercados de código (backticks o tildes, incluidos bloques sin cerrar), código inline ni etiquetas de enlaces Markdown. Los destinos únicos generan un solo botón. El título del modelo no controla ni la etiqueta fija ni el destino. El texto restante sigue por el escape HTML habitual.
 
@@ -62,3 +62,9 @@ Comando de prueba real del puente:
 ```bash
 .venv/bin/python -m scripts.verify_obsidian_bridge
 ```
+
+## Compatibilidad con respuestas reales de Hermes
+
+Una respuesta real usó `+` como espacio en el parámetro `file` y por eso no generó botón con la política RFC estricta. El adaptador ahora admite ese formato de formulario mediante la conversión mínima `+` → `%20`. No decodifica ni reconstruye barras, Unicode o signos más percent-encoded. El puente recibe únicamente el URI canónico validado. Los URI ya válidos no cambian, los parámetros desconocidos siguen rechazándose, y no se procesan bloques de código.
+
+Verificación posterior: 101 pruebas Python y 5 JavaScript. Se recuperó la respuesta real del chat activo y se entregó su botón corregido sin repetir la tarea de Hermes ni modificar la nota. Evidencia local excluida de Git: `docs/obsidian-form-encoding-validation.json`.
