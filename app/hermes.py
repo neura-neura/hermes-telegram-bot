@@ -69,7 +69,7 @@ class HermesClient:
     async def bots(self):
         # Desktop Bot Mode roster is made from live Hermes profiles, distinct from
         # the gateway/UI profile. Friendly names are metadata, never identity.
-        profiles=await self.profiles()
+        profiles=[row for row in await self.profiles() if (Path(row['path'])/'config.yaml').is_file()]
         def enrich(rows):
             import yaml
             for row in rows:
@@ -169,7 +169,7 @@ class HermesClient:
         if sid in self.native.sessions:return await self.native.mutate(action,sid,profile,extra)
         return await self.request('POST','/api/session/'+action,profile,json={'session_id':sid,**extra})
     async def download(self, path, sid, profile):
-        if sid in self.native.sessions:return await self.native.download(path,profile)
+        if sid in self.native.sessions:return await self.native.download(path,profile,sid)
         await self.prepare_profile(profile)
         limit=50*1024*1024
         async with self.http.stream('GET','/api/file/raw',params={'path':path,'session_id':sid},headers=self.headers(profile)) as r:

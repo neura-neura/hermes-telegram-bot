@@ -1,5 +1,5 @@
 """Native Hermes session API for Desktop canonical Bot Chats."""
-import asyncio,base64,json,mimetypes,secrets
+import asyncio,base64,fcntl,json,mimetypes,os,secrets,stat,time
 from pathlib import Path
 from urllib.parse import quote
 import httpx
@@ -10,6 +10,7 @@ class NativeSessions:
     def __init__(self):
         self.http=httpx.AsyncClient(timeout=httpx.Timeout(600,connect=10),trust_env=False)
         self.sessions=set()
+        self.run_started={}
     def home(self,profile):return Path.home()/'.hermes' if profile=='default' else Path.home()/'.hermes/profiles'/profile
     async def auth(self,profile):
         key=await asyncio.to_thread(lambda:dotenv_values(self.home(profile)/'.env').get('API_SERVER_KEY'))
@@ -47,6 +48,7 @@ class NativeSessions:
             return {'filename':attachment.filename,'path':str(dest),'mime':attachment.mime,'size':attachment.size,'is_image':attachment.image}
         return await asyncio.to_thread(copy)
     async def start(self,sid,profile,message,attachments):
+        self.run_started[sid]=time.time()
         refs=attachments or []
         paths=[r['path'] for r in refs]
         text=message or ''
@@ -91,12 +93,30 @@ class NativeSessions:
         if action=='archive':extra={'archived':True}
         if action=='rename':extra={'title':extra['title']}
         return await self.request('PATCH',path,profile,json=extra)
-    async def download(self,path,profile):
-        p=Path(path).expanduser().resolve();roots=[Path.home()/'workspace',self.home(profile)/'workspace',self.home(profile)/'uploads/telegram']
-        if not any(p.is_relative_to(root.resolve()) for root in roots):raise BackendError('Salida nativa fuera de los directorios de archivos autorizados')
-        if p.name.startswith('.') or p.name in ('config.yaml','profile.yaml') or 'secrets' in p.parts or '.env' in p.name:raise BackendError('Archivo privado bloqueado')
+    async def download(self,path,profile,sid):
+        raw=Path(path).expanduser()
+        if raw.is_symlink():raise BackendError('Archivo simbólico bloqueado')
         def read():
-            if p.stat().st_size>50*1024*1024:raise BackendError('Archivo mayor de 50 MB')
-            return p.read_bytes()
-        return await asyncio.to_thread(read),mimetypes.guess_type(str(p))[0] or 'application/octet-stream'
+            flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0);fd=os.open(raw,flags)
+            try:
+                info=os.fstat(fd);actual=Path(fcntl.fcntl(fd,50,b'\0'*1024).split(b'\0',1)[0].decode()).resolve()
+                if not stat.S_ISREG(info.st_mode):raise BackendError('Archivo no disponible')
+                roots=[Path.home()/'workspace',self.home(profile)/'workspace',self.home(profile)/'uploads/telegram']
+                home=Path.home().resolve();denied=[home/x for x in ('.ssh','.aws','.gnupg','.kube','.docker','.config','.azure','.gcloud','Library')]
+                if any(actual==root or actual.is_relative_to(root) for root in denied):raise BackendError('Archivo privado bloqueado')
+                hermes_root=(Path.home()/'.hermes').resolve();hermes_roots=[hermes_root,*[x for x in (hermes_root/'profiles').glob('*') if x.is_dir()]]
+                credential_names={'.env','auth.json','auth.lock','credentials','config.yaml','.anthropic_oauth.json','google_token.json','google_oauth_pending.json','state.db','state.db-wal','state.db-shm','kanban.db','kanban.db-wal','kanban.db-shm'}
+                if any(actual.parent==root.resolve() and actual.name in credential_names for root in hermes_roots):raise BackendError('Archivo privado bloqueado')
+                if any(actual.is_relative_to((root/name).resolve()) for root in hermes_roots for name in ('sessions','browser-profile','pairing','mcp-tokens')):raise BackendError('Archivo privado bloqueado')
+                if actual.name.startswith('.') or 'secrets' in actual.parts or '.env' in actual.name:raise BackendError('Archivo privado bloqueado')
+                safe_root=any(actual.is_relative_to(root.resolve()) for root in roots)
+                born=getattr(info,'st_birthtime',info.st_ctime);started=self.run_started.get(sid)
+                if not safe_root and (not started or born<started-0.01 or born>time.time()+1):raise BackendError('Salida nativa fuera de los directorios de archivos autorizados')
+                if info.st_size>50*1024*1024:raise BackendError('Archivo mayor de 50 MB')
+                data=os.read(fd,50*1024*1024+1)
+                if len(data)>50*1024*1024:raise BackendError('Archivo mayor de 50 MB')
+                return data,actual
+            finally:os.close(fd)
+        data,actual=await asyncio.to_thread(read)
+        return data,mimetypes.guess_type(str(actual))[0] or 'application/octet-stream'
     async def close(self):await self.http.aclose()

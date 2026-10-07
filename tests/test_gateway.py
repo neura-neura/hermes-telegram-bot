@@ -1,4 +1,4 @@
-import asyncio,io
+import asyncio,io,os,time
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -109,6 +109,19 @@ async def test_hermes_attachment_contract():
   assert requests[0]['attachments'][0]['path']=='/hermes/attachments/a.pdf'
  finally:await h.close()
 
+@pytest.mark.asyncio
+async def test_bots_omit_incomplete_profile_directories(tmp_path):
+ from app.hermes import HermesClient
+ h=HermesClient(Config('fake',123))
+ complete=tmp_path/'complete';complete.mkdir();(complete/'config.yaml').write_text('model: test\n')
+ incomplete=tmp_path/'temporary';incomplete.mkdir()
+ async def profiles():
+  return [{'name':'complete','path':str(complete)},{'name':'temporary','path':str(incomplete)}]
+ h.profiles=profiles
+ try:
+  assert [row['name'] for row in await h.bots()]==['complete']
+ finally:await h.close()
+
 def test_angle_output():assert output_paths('[file](</tmp/a b.csv>)')==['/tmp/a b.csv']
 
 def test_new_agent_route():assert intent('abre un chat nuevo con Little K').action=='open_new'
@@ -192,4 +205,54 @@ async def test_native_auth_uses_selected_profile_key(tmp_path):
   assert url.endswith('/p/joe');assert headers['Authorization']=='Bearer joe-test-key-long-enough'
   url,headers=await n.auth('default')
   assert '/p/' not in url;assert headers['Authorization']=='Bearer default-test-key-long-enough'
+ finally:await n.close()
+
+@pytest.mark.asyncio
+async def test_native_download_allows_recent_generated_file_outside_workspace(tmp_path):
+ from app.native import NativeSessions
+ n=NativeSessions();n.home=lambda profile:tmp_path/'profile'
+ artifact=tmp_path/'translated.epub';artifact.write_bytes(b'epub')
+ n.run_started['sid']=time.time()-1
+ try:
+  data,mime=await n.download(str(artifact),'translator','sid')
+  assert data==b'epub';assert mime=='application/epub+zip'
+ finally:await n.close()
+
+@pytest.mark.asyncio
+async def test_native_download_blocks_recent_credential_path(tmp_path,monkeypatch):
+ from app.native import NativeSessions
+ n=NativeSessions();n.home=lambda profile:tmp_path/'profile'
+ home=tmp_path/'home';secret=home/'.ssh'/'id_ed25519';secret.parent.mkdir(parents=True);secret.write_bytes(b'secret')
+ monkeypatch.setattr(Path,'home',classmethod(lambda cls:home))
+ try:
+  with pytest.raises(Exception,match='bloqueado|autorizados'):await n.download(str(secret),'translator','sid')
+ finally:await n.close()
+
+@pytest.mark.asyncio
+async def test_native_download_blocks_stale_file_outside_safe_roots(tmp_path):
+ from app.native import NativeSessions
+ n=NativeSessions();n.home=lambda profile:tmp_path/'profile'
+ artifact=tmp_path/'old.txt';artifact.write_text('old')
+ old=time.time()-601;os.utime(artifact,(old,old))
+ try:
+  with pytest.raises(Exception,match='autorizados'):await n.download(str(artifact),'translator','sid')
+ finally:await n.close()
+
+@pytest.mark.asyncio
+async def test_native_download_blocks_other_profile_credentials(tmp_path,monkeypatch):
+ from app.native import NativeSessions
+ n=NativeSessions()
+ home=tmp_path/'home';secret=home/'.hermes/profiles/other/config.yaml';secret.parent.mkdir(parents=True);secret.write_text('secret')
+ monkeypatch.setattr(Path,'home',classmethod(lambda cls:home))
+ try:
+  with pytest.raises(Exception,match='bloqueado'):await n.download(str(secret),'translator','sid')
+ finally:await n.close()
+
+@pytest.mark.asyncio
+async def test_native_download_rejects_symlink(tmp_path):
+ from app.native import NativeSessions
+ n=NativeSessions();n.home=lambda profile:tmp_path/'profile'
+ target=tmp_path/'target.txt';target.write_text('secret');link=tmp_path/'fresh.txt';link.symlink_to(target)
+ try:
+  with pytest.raises(Exception,match='simbólico|autorizados'):await n.download(str(link),'translator','sid')
  finally:await n.close()
