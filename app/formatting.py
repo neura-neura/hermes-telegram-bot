@@ -30,11 +30,15 @@ def telegram_html(text):
     return re.sub(r'\x00(\d+)\x00',lambda m:code[int(m[1])],text)
 
 def output_paths(text):
-    """Explicit media markers and local Markdown links; never scan arbitrary prose paths."""
+    """Explicit media markers, local Markdown links and code-formatted absolute paths."""
     paths=[]
     for m in re.finditer(r'MEDIA:\s*([^\n]+)',text):
         p=m[1].strip().strip('`\"\'');paths.append(p)
     for m in re.finditer(r'!?\[[^\]]*\]\(([^)]+)\)',text):
         p=m[1].strip().strip('<>')
         if p.startswith(('/', 'file://','./')):paths.append(p.removeprefix('file://'))
+    # Agents sometimes correctly create a file but mention only its absolute path
+    # in inline code. The native download layer independently enforces per-run
+    # provenance, sensitive-path denial, symlink safety and size limits.
+    for m in re.finditer(r'`(/[^`\n]+)`',text):paths.append(m[1].strip())
     return list(dict.fromkeys(paths))

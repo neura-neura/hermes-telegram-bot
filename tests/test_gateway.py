@@ -22,7 +22,7 @@ def test_intent(text,action):assert intent(text).action==action
 def test_combined():
  r=intent('abre Little K y pregúntale qué está haciendo');assert r.query=='Little K';assert r.message=='qué está haciendo'
 
-def test_names():assert len(match_name([{'name':'little-k'}],'Little K'))==1
+def test_names():assert len(match_name([{'name':'little-k-companion'}],'Little K'))==1
 
 @pytest.mark.parametrize('text',['a'*10000,'hola 🐈 '*3000,'one\n\ntwo '*2000])
 def test_split(text):
@@ -36,6 +36,9 @@ def test_format():
 
 def test_paths():assert output_paths('[csv](/tmp/a.csv)\nMEDIA:/tmp/a.png')==['/tmp/a.png','/tmp/a.csv']
 
+def test_paths_include_absolute_file_in_inline_code():
+ assert output_paths('El EPUB corregido está en `/Users/neura/book-es.epub`.')==['/Users/neura/book-es.epub']
+
 def test_mime():
  assert mime_type('image.png','application/octet-stream')=='image/png'
  assert mime_type('file.py')=='text/x-python'
@@ -46,7 +49,7 @@ def test_mime():
 async def test_storage(tmp_path):
  s=await Storage().open(tmp_path/'state.db')
  try:
-  await s.activate('scope','a','default');await s.activate('scope','b','joe')
+  await s.activate('scope','a','default');await s.activate('scope','b','joe-x')
   assert (await s.back('scope'))['sid']=='a'
   cb=await s.callback('scope',{'action':'delete'});assert len(cb.encode())<64
   assert await s.resolve('other',cb) is None
@@ -141,8 +144,8 @@ async def test_bot_selection_preserves_profile(tmp_path):
  s=await Storage().open(tmp_path/'s.db')
  try:
   await s.activate('scope','normal','default')
-  await s.activate_bot('scope','bot-chat','little-k','Little K')
-  v=await s.get('scope');assert v['profile']=='default';assert v['bot']=='Little K';assert session_profile(v)=='little-k'
+  await s.activate_bot('scope','bot-chat','little-k-companion','Little K')
+  v=await s.get('scope');assert v['profile']=='default';assert v['bot']=='Little K';assert session_profile(v)=='little-k-companion'
   v=await s.back('scope');assert v['profile']=='default';assert v['sid']=='normal';assert session_profile(v)=='default'
  finally:await s.close()
 
@@ -153,7 +156,7 @@ def test_exit_bot(text):assert intent(text).action=='create'
 async def test_normal_chat_clears_bot_preserves_profile(tmp_path):
  s=await Storage().open(tmp_path/'s.db')
  try:
-  await s.activate('scope','normal','default');await s.activate_bot('scope','bot-chat','little-k','Little K')
+  await s.activate('scope','normal','default');await s.activate_bot('scope','bot-chat','little-k-companion','Little K')
   v=await s.get('scope');await s.activate('scope','new-normal',v['profile'])
   v=await s.get('scope');assert v['profile']=='default';assert not v.get('bot_profile');assert not v.get('bot')
   v=await s.back('scope');assert v['sid']=='bot-chat';assert v['bot']=='Little K'
@@ -162,22 +165,22 @@ async def test_normal_chat_clears_bot_preserves_profile(tmp_path):
 @pytest.mark.asyncio
 async def test_native_reply_mapping_survives_restart(tmp_path):
  path=tmp_path/'s.db';s=await Storage().open(path)
- await s.map(123,1,'scope','little-k','native-id','message-1',native=True)
+ await s.map(123,1,'scope','little-k-companion','native-id','message-1',native=True)
  await s.close();s=await Storage().open(path)
  try:
   row=await s.lookup(123,1,'scope')
-  assert row['native'];assert row['sid']=='native-id';assert row['profile']=='little-k'
+  assert row['native'];assert row['sid']=='native-id';assert row['profile']=='little-k-companion'
  finally:await s.close()
 
 @pytest.mark.asyncio
 async def test_exit_and_back_restore_native_transport(tmp_path):
  s=await Storage().open(tmp_path/'s.db')
  try:
-  await s.activate_bot('scope','native-id','little-k','Little K')
+  await s.activate_bot('scope','native-id','little-k-companion','Little K')
   v=await s.get('scope');v['bot_native']=True;await s.set('scope',v)
   await s.activate('scope','normal-id',v['profile'])
   v=await s.get('scope');assert not v.get('bot_native');assert v['profile']=='default'
-  v=await s.back('scope');assert v['bot_native'];assert v['bot_profile']=='little-k';assert v['profile']=='default'
+  v=await s.back('scope');assert v['bot_native'];assert v['bot_profile']=='little-k-companion';assert v['profile']=='default'
  finally:await s.close()
 
 
@@ -199,10 +202,10 @@ async def test_native_auth_uses_selected_profile_key(tmp_path):
  from app.native import NativeSessions
  n=NativeSessions();n.home=lambda profile:tmp_path/profile
  try:
-  for profile in ('default','joe'):
+  for profile in ('default','joe-x'):
    home=tmp_path/profile;home.mkdir();(home/'.env').write_text('API_SERVER_KEY='+profile+'-test-key-long-enough\n')
-  url,headers=await n.auth('joe')
-  assert url.endswith('/p/joe');assert headers['Authorization']=='Bearer joe-test-key-long-enough'
+  url,headers=await n.auth('joe-x')
+  assert url.endswith('/p/joe-x');assert headers['Authorization']=='Bearer joe-x-test-key-long-enough'
   url,headers=await n.auth('default')
   assert '/p/' not in url;assert headers['Authorization']=='Bearer default-test-key-long-enough'
  finally:await n.close()
@@ -214,7 +217,7 @@ async def test_native_download_allows_recent_generated_file_outside_workspace(tm
  artifact=tmp_path/'translated.epub';artifact.write_bytes(b'epub')
  n.run_started['sid']=time.time()-1
  try:
-  data,mime=await n.download(str(artifact),'translator','sid')
+  data,mime=await n.download(str(artifact),'anna-translator','sid')
   assert data==b'epub';assert mime=='application/epub+zip'
  finally:await n.close()
 
@@ -225,7 +228,7 @@ async def test_native_download_blocks_recent_credential_path(tmp_path,monkeypatc
  home=tmp_path/'home';secret=home/'.ssh'/'id_ed25519';secret.parent.mkdir(parents=True);secret.write_bytes(b'secret')
  monkeypatch.setattr(Path,'home',classmethod(lambda cls:home))
  try:
-  with pytest.raises(Exception,match='bloqueado|autorizados'):await n.download(str(secret),'translator','sid')
+  with pytest.raises(Exception,match='bloqueado|autorizados'):await n.download(str(secret),'anna-translator','sid')
  finally:await n.close()
 
 @pytest.mark.asyncio
@@ -235,7 +238,7 @@ async def test_native_download_blocks_stale_file_outside_safe_roots(tmp_path):
  artifact=tmp_path/'old.txt';artifact.write_text('old')
  old=time.time()-601;os.utime(artifact,(old,old))
  try:
-  with pytest.raises(Exception,match='autorizados'):await n.download(str(artifact),'translator','sid')
+  with pytest.raises(Exception,match='autorizados'):await n.download(str(artifact),'anna-translator','sid')
  finally:await n.close()
 
 @pytest.mark.asyncio
@@ -245,7 +248,7 @@ async def test_native_download_blocks_other_profile_credentials(tmp_path,monkeyp
  home=tmp_path/'home';secret=home/'.hermes/profiles/other/config.yaml';secret.parent.mkdir(parents=True);secret.write_text('secret')
  monkeypatch.setattr(Path,'home',classmethod(lambda cls:home))
  try:
-  with pytest.raises(Exception,match='bloqueado'):await n.download(str(secret),'translator','sid')
+  with pytest.raises(Exception,match='bloqueado'):await n.download(str(secret),'anna-translator','sid')
  finally:await n.close()
 
 @pytest.mark.asyncio
@@ -254,5 +257,5 @@ async def test_native_download_rejects_symlink(tmp_path):
  n=NativeSessions();n.home=lambda profile:tmp_path/'profile'
  target=tmp_path/'target.txt';target.write_text('secret');link=tmp_path/'fresh.txt';link.symlink_to(target)
  try:
-  with pytest.raises(Exception,match='simbólico|autorizados'):await n.download(str(link),'translator','sid')
+  with pytest.raises(Exception,match='simbólico|autorizados'):await n.download(str(link),'anna-translator','sid')
  finally:await n.close()
